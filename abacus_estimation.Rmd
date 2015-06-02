@@ -15,47 +15,31 @@ output:
 ---
 
 ```{r include=FALSE}
-# This loads the mosaic and dplyr packages
-require(mosaic)
-```
-
-```{r include=FALSE}
-# Some customization.  You can alter or delete as desired (if you know what you are doing).
-
-# This changes the default colors in lattice plots.
-trellis.par.set(theme=theme.mosaic())  
-
 # knitr settings to control how R chunks work.
 require(knitr)
 opts_chunk$set(
-  tidy=FALSE,     # display code as typed
+  cache=TRUE,
   size="small"    # slightly smaller font for code
 )
 ```
 
-```{r, include=FALSE}
-# Load additional packages here.  Uncomment the line below to use Project MOSAIC data sets.
-# require(mosaicData)   
-```
-
 Load more libraries
 ```{r, include = FALSE}
-library(plyr)
-library(reshape2)
+library(dplyr)
+library(tidyr)
 library(ggplot2)
 library(lme4)
+# require(mosaic)
 rm(list=ls())
 theme_set(theme_bw())
 options(warn=-1)
 ```
 
-
 Read in the data first
 ```{r}
-d <- read.csv("/Users/jsulliv1/Desktop/UCSDProjects/AnalyzeWrite/Abacus/zenith all data complete and correct estimation 040815.csv")
+d <- read.csv("zenith all data.csv")
 d$condition <- factor(d$condition, levels=c("control","abacus"))
 head(d)
-
 ```
 
 Combine Woodcock and Wiat and z-score the Standardized Test composite
@@ -68,11 +52,10 @@ summary(d$standardized[d$year==2])
 summary(d$standardized[d$year==3])
 summary(d$standardized[d$condition =="abacus"])
 summary(d$standardized[d$condition =="control"])
-
-
 ```
 
-Descriptives of Each variable
+# Descriptives and preliminaries
+
 ```{r}
 summary(d$ans[d$condition =="abacus"])
 summary(d$ans[d$condition =="control"])
@@ -81,25 +64,17 @@ summary(d$ans[d$year==1])
 summary(d$ans[d$year==2])
 summary(d$ans[d$year==3])
 
-
-
-
-
 summary(d$deviance[d$condition =="abacus"])
 summary(d$deviance[d$condition =="control"])
 summary(d$deviance[d$year==1])
 summary(d$deviance[d$year==2])
 summary(d$deviance[d$year==3])
 
-
-
-
 summary(d$linr2[d$condition =="abacus"])
 summary(d$linr2[d$condition =="control"])
 summary(d$linr2[d$year==1])
 summary(d$linr2[d$year==2])
 summary(d$linr2[d$year==3])
-
 
 summary(d$ordinality[d$condition =="abacus"])
 summary(d$ordinality[d$condition =="control"])
@@ -109,36 +84,46 @@ summary(d$ordinality[d$year==3])
 
 ```
 
+## Reliability for Estimation tasks
 
-
-Reliability for Estimation tasks
+Deviance.
 ```{r}
-deviance.corrs <- data.frame(year=factor(c("1-2","2-3")),
-                             corrs=c(cor.test(d$deviance[d$year==1],d$deviance[d$year==2])$estimate,
-                                     cor.test(d$deviance[d$year==2],d$deviance[d$year==3])$estimate))
-deviance.corrs
+data.frame(year=factor(c("1-2","2-3")),
+           corrs=c(cor.test(d$deviance[d$year==1],
+                            d$deviance[d$year==2])$estimate,
+                   cor.test(d$deviance[d$year==2],
+                            d$deviance[d$year==3])$estimate))
+```
 
+Linear $r^2$.
+```{r}
+data.frame(year=factor(c("1-2","2-3")),
+           corrs=c(cor.test(d$linr2[d$year==1],d$linr2[d$year==2])$estimate,
+                   cor.test(d$linr2[d$year==2],d$linr2[d$year==3])$estimate))
+```
 
-linr2.corrs <- data.frame(year=factor(c("1-2","2-3")),
-                          corrs=c(cor.test(d$linr2[d$year==1],d$linr2[d$year==2])$estimate,
-                                  cor.test(d$linr2[d$year==2],d$linr2[d$year==3])$estimate))
-linr2.corrs
+Ordinality.
+```{r}
+data.frame(year=factor(c("1-2","2-3")),
+           corrs=c(cor.test(d$ordinality[d$year==1],
+                            d$ordinality[d$year==2])$estimate,
+                   cor.test(d$ordinality[d$year==2],
+                            d$ordinality[d$year==3])$estimate))
+```
 
-
-ord.corrs <- data.frame(year=factor(c("1-2","2-3")),
-                          corrs=c(cor.test(d$ordinality[d$year==1],d$ordinality[d$year==2])$estimate,
-                                  cor.test(d$ordinality[d$year==2],d$ordinality[d$year==3])$estimate))
-ord.corrs
-
-
-ans.corrs <- data.frame(year=factor(c("0-1","1-2","2-3")),
-                        corrs=c(cor.test(d$ans[d$year==0],d$ans[d$year==1])$estimate, cor.test(d$ans[d$year==1],d$ans[d$year==2])$estimate,
-                                cor.test(d$ans[d$year==2],d$ans[d$year==3])$estimate))
-ans.corrs
-
+ANS.
+```{r}
+data.frame(year=factor(c("0-1","1-2","2-3")),
+           corrs=c(cor.test(d$ans[d$year==0],
+                            d$ans[d$year==1])$estimate, 
+                   cor.test(d$ans[d$year==1],
+                            d$ans[d$year==2])$estimate,
+                   cor.test(d$ans[d$year==2],
+                            d$ans[d$year==3])$estimate))
 ```
 We see that the correlations are pretty decent year-to-year for our three DVs.
 
+## Training effects
 
 OK, now we test for effect of training for ANS. We can use a model b/c we have all 4 years:
 ```{r}
@@ -150,16 +135,14 @@ a
 
 ```
 
-
-
 Now, we do t-tests by task to find differences between control and abacus groups. We will correct for multiple comparisons post-hoc, correcting for the # of comparisons per DV. 
 
 ```{r}
 tasks <- c("deviance","linr2","ans", "ordinality")
 
 for (t in tasks) {
-  md <- melt(d, id.vars=c("subnum","year","condition","female","age"), measure.vars=t)
-  
+  md <- d %>% 
+    rename_("value" = t)
   
   print(paste("*********",t,"**********"))
   print(t.test(subset(md,condition=="abacus" & year==1)$value,
@@ -171,11 +154,9 @@ for (t in tasks) {
 }
 ```
 
+# PLOTS
 
-PLOTS
-ANS
-Without intervention split
-
+ANS - Without intervention split
 ```{r, warnings=FALSE, message=FALSE}
 qplot(ans, standardized, facets=~year, 
       data=d) + 
@@ -185,8 +166,7 @@ qplot(ans, standardized, facets=~year,
 ```
 
 And with:
-  
-  ```{r, warnings=FALSE, message=FALSE}
+```{r, warnings=FALSE, message=FALSE}
 qplot(ans, standardized, facets=~year, 
       col=condition,
       data=d) + 
@@ -195,10 +175,8 @@ qplot(ans, standardized, facets=~year,
   xlab("Weber Fraction")        
 ```
 
-PAE
 Now do the same for deviance:
-  
-  ```{r, warnings=FALSE}
+```{r, warnings=FALSE}
 qplot(deviance, standardized, facets=~year,
       data=d) + 
   geom_smooth(method="lm") +
@@ -214,9 +192,8 @@ qplot(deviance, standardized, facets=~year,
 
 ```
 
-and for linear r^2:
-  
-  ```{r, warnings=FALSE}
+and for linear $r^2$:
+```{r, warnings=FALSE}
 qplot(linr2, standardized, facets=~year,
       data=d) + 
   geom_smooth(method="lm") +
@@ -232,8 +209,7 @@ qplot(linr2, standardized, facets=~year,
 ```
 
 and for ordinality:
-  
-  ```{r, warnings=FALSE}
+```{r, warnings=FALSE}
 qplot(ordinality, standardized, facets=~year,
       data=d) + 
   geom_smooth(method="lm") +
@@ -248,15 +224,16 @@ qplot(ordinality, standardized, facets=~year,
   xlab("Ordinality")       
 ```
 
+# Models
 
-
-
-Setup Models
+Set up models - doesn't currently show. 
 ```{r, echo=FALSE}
 model.pred <- function (data, 
-                        mathvars=c("wiat","woodcock","placeval","math","arith","standardized"),
+                        mathvars=c("wiat","woodcock","placeval",
+                                   "math","arith","standardized"),
                         predvars=c("ans","mental.rot","verbalwm",
-                                   "spatialwm","ravens","deviance","linr2","ordinality"),
+                                   "spatialwm","ravens","deviance",
+                                   "linr2","ordinality"),
                         model.formula, 
                         model.name="model",
                         years = c(0,1,2,3)) {  
@@ -282,20 +259,19 @@ model.pred <- function (data,
     
     ## run model
     model <- lm(model.formula, data=yc)  
-    coefs <- rbind.fill(coefs, 
-                        data.frame(year=yr,
-                                   betas=coef(model),
-                                   se=coef(summary(model))[, "Std. Error"],
-                                   preds=names(coef(model)),
-                                   model=model.name))
-  }
-
+    coefs <- bind_rows(coefs, 
+                       data.frame(year=yr,
+                                  betas=coef(model),
+                                  se=coef(summary(model))[, "Std. Error"],
+                                  preds=names(coef(model)),
+                                  model=model.name))
+    }
+  
   return(coefs)
 }
 ```
 
 And a function to relevel coefficients. (Also not rendered). 
-
 ```{r, echo=FALSE}
 relevel.coefs <- function (coefs, dv="ans.scale") {
   
@@ -303,7 +279,7 @@ relevel.coefs <- function (coefs, dv="ans.scale") {
                         levels=c("(Intercept)",dv,"mental.rot.scale",
                                  "spatialwm.scale","verbalwm.scale","ravens.scale",
                                  "age","conditionabacus"))
-  coefs$preds <- revalue(coefs$preds, c("(Intercept)"="Intercept",
+  coefs$preds <- plyr::revalue(coefs$preds, c("(Intercept)"="Intercept",
                                         "ans.scale" ="ANS",
                                         "linr2.scale"="Estimation Linear r^2",
                                         "ordinality.scale"="Ordinality",
@@ -315,7 +291,7 @@ relevel.coefs <- function (coefs, dv="ans.scale") {
                                         "conditionabacus"="Intervention",
                                         "age"="Age"))
   coefs$model <- factor(coefs$model, levels=c("vanilla","complex","complex + cond"))
-  coefs$model <- revalue(coefs$model, c("vanilla"="Univariate",
+  coefs$model <- plyr::revalue(coefs$model, c("vanilla"="Univariate",
                                         "complex"="All Preds",
                                         "complex + cond"=
                                           "All Preds + Intervention"))
@@ -323,25 +299,24 @@ relevel.coefs <- function (coefs, dv="ans.scale") {
 }
 ```
 
-Actually Test Models
+## Test Models on standardized tests
 
 ANS and standardized test composite
-
 ```{r}
 coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ ans.scale), 
-                              model.name="vanilla")),
-            
+                              model.formula = formula(standardized.scale ~ 
+                                                        ans.scale), 
+                              model.name="vanilla")),               
                try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ ans.scale + 
+                              model.formula = formula(standardized.scale ~ 
+                                                        ans.scale + 
                                                         mental.rot.scale + 
                                                         verbalwm.scale + 
-                                                        spatialwm.scale + ravens.scale + 
+                                                        spatialwm.scale + 
+                                                        ravens.scale + 
                                                         age + condition), 
                               model.name="complex + cond")))
-
 coefs <- relevel.coefs(coefs)
-
 
 qplot(preds,betas,facets=model~year, 
       fill=preds,
@@ -356,11 +331,11 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-
+ans.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 Percent Absolute Error
-
 ```{r}
 coefs <- rbind(try(model.pred(data=d, 
                               model.formula = formula(standardized.scale ~ 
@@ -390,10 +365,11 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+pae.coefs <- coefs
+as.data.frame(coefs)
 ```
 
-Linear R2
-
+Linear $r^2$
 ```{r}
 coefs <- rbind(try(model.pred(data=d, 
                               model.formula = formula(standardized.scale ~ 
@@ -424,11 +400,11 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
+as.data.frame(coefs)
+linr2.coefs <- coefs
 ```
 
-
 Ordinality
-
 ```{r}
 coefs <- rbind(try(model.pred(data=d, 
                               model.formula = formula(standardized.scale ~ 
@@ -459,15 +435,39 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
+ord.coefs <- coefs
+as.data.frame(coefs)
+```
+
+Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison.
+```{r}
+mathvars=c("wiat","woodcock","placeval","math","arith","standardized")
+predvars=c("ans","mental.rot","verbalwm","spatialwm","ravens","deviance",
+           "linr2","ordinality")
+
+y <- subset(d, year==0)
+yc <- y[complete.cases(y[, c("ans","mental.rot","verbalwm","spatialwm","ravens")]),]
+    
+## standardize predictors in
+for (v in c(predvars,mathvars)) {
+  eval(parse(text=paste("yc$",v,".scale <- scale(yc$",v,")",sep="")))
+}
+        
+## run models
+model1 <- lm(standardized.scale ~ ans.scale + mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc)
+model2 <- lm(standardized.scale ~ mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc)
+summary(model1)
+summary(model2)
+anova(model1, model2)
 ```
 
 
-Principle Components:
+## Principal Components
 Here we take a principal components analysis of all the math measures and then take PC1, which is the factor with the largest explained variance amongst all the math measures. This is just one way of making a composite of all the math DVs and exploring its relatedness to ANS. Note: the PCs come out negative, so MCF flipped them for interpretability.
 
-
 ANS
-```{r}
 ```{r}
 coefs <- rbind(model.pred(data=d, 
                           model.formula = formula(pc1 ~ ans.scale), 
@@ -501,7 +501,9 @@ qplot(preds,-betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+pca.ans.coefs <- coefs
 ```
+
 Ordinality
 ```{r}
 
@@ -534,10 +536,10 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
+pca.ord.coefs <- coefs
 ```
 
 PAE
-
 ```{r}
 coefs <- rbind(try(model.pred(data=d, 
                               model.formula = formula(pc1 ~ 
@@ -568,13 +570,11 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-
+pca.pae.coefs <- coefs
 ```
 
 
-LinR2
-
-
+Linear $r^2$
 ```{r}
 
 coefs <- rbind(try(model.pred(data=d, 
@@ -606,11 +606,11 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
-  
+pca.linr2.coefs <- coefs
 ```
 
 
-Now, combine all estimation measures
+## Combine all estimation measures
 Predicting PC1
 
 ```{r}
@@ -688,42 +688,86 @@ qplot(preds,betas,facets=model~year,
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
 ```
 
-STILL NEED: Figure that Mike will make.
+## Megafigure
+
+```{r}
+ans.coefs$measure <- "ANS"
+ans.coefs$outcome <- "Standarized"
+linr2.coefs$measure <- "Linear r^2"
+linr2.coefs$outcome <- "Standardized"
+ord.coefs$measure <- "Ordinality"
+ord.coefs$outcome <- "Standardized"
+pae.coefs$measure <- "PAE"
+pae.coefs$outcome <- "Standardized"
+pca.ans.coefs$measure <- "ANS"
+pca.ans.coefs$outcome <- "PCA"
+pca.linr2.coefs$measure <- "Linear r^2"
+pca.linr2.coefs$outcome <- "PCA"
+pca.ord.coefs$measure <- "Ordinality"
+pca.ord.coefs$outcome <- "PCA"
+pca.pae.coefs$measure <- "PAE"
+pca.pae.coefs$outcome <- "PCA"
+
+all.coefs <- bind_rows(ans.coefs, 
+                       linr2.coefs, 
+                       ord.coefs,
+                       pae.coefs,
+                       pca.ans.coefs,
+                       pca.linr2.coefs, 
+                       pca.ord.coefs,
+                       pca.pae.coefs) %>%
+  filter(model == "All Preds + Intervention")
 
 
+qplot(preds,betas, facets=measure*outcome~year, 
+      fill=preds,
+      geom="bar",
+      stat="identity",
+      position="dodge",
+      data=subset(all.coefs, preds!="Intercept")) +
+  geom_linerange(aes(ymin=betas-se,
+                     ymax=betas+se)) +
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_colour_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+```
 
 
+# Model comparisons
 OK, so now that we have that pretty stuff, it's time to do model comparisons that Jess knows how to get the betas out of. 
 
-Univariate analyses
+
+# Univariate analyses
 
 Here are all the correlations:
 
 ```{r}
-ddply(d, .(year), 
-      summarise, 
-      ans.std.cor = try(cor.test(ans,standardized)$estimate),
-      ans.pc1.cor = try(cor.test(ans,pc1)$estimate),
-      dev.pc1.cor = try(cor.test(deviance,pc1)$estimate),
-      dev.std.cor = try(cor.test(deviance,standardized)$estimate),
-      lin.pc1.cor = try(cor.test(linr2,pc1)$estimate),
-      lin.std.cor = try(cor.test(linr2,standardized)$estimate),
-      ord.pc1.cor = try(cor.test(ordinality,pc1)$estimate),
-      ord.std.cor = try(cor.test(ordinality,standardized)$estimate))
+# d %>% 
+#   group_by(year) %>%
+#   summarise(ans.std.cor = cor.test(ans,standardized)$estimate,
+#             ans.pc1.cor = cor.test(ans,pc1)$estimate,
+#             dev.pc1.cor = cor.test(deviance,pc1)$estimate,
+#             dev.std.cor = cor.test(deviance,standardized)$estimate,
+#             lin.pc1.cor = cor.test(linr2,pc1)$estimate,
+#             lin.std.cor = cor.test(linr2,standardized)$estimate,
+#             ord.pc1.cor = cor.test(ordinality,pc1)$estimate,
+#             ord.std.cor = cor.test(ordinality,standardized)$estimate)
 ```
 
 And their p-values:
 ```{r}
-ddply(d, .(year), 
-      summarise, 
-      ans.std.cor = try(cor.test(ans,standardized)$p.value),
-      ans.pc1.cor = try(cor.test(ans,pc1)$p.value),
-      dev.pc1.cor = try(cor.test(deviance,pc1)$p.value),
-      dev.std.cor = try(cor.test(deviance,standardized)$p.value),
-      lin.pc1.cor = try(cor.test(linr2,pc1)$p.value),
-      lin.std.cor = try(cor.test(linr2,standardized)$p.value),
-      ord.pc1.cor = try(cor.test(ordinality,pc1)$p.value),
-      ord.std.cor = try(cor.test(ordinality,standardized)$p.value))
+# d $>% 
+# group_by(year) %>%
+#   summarise(ans.std.cor = cor.test(ans,standardized)$p.value,
+#             ans.pc1.cor = cor.test(ans,pc1)$p.value,
+#             dev.pc1.cor = cor.test(deviance,pc1)$p.value,
+#             dev.std.cor = cor.test(deviance,standardized)$p.value,
+#             lin.pc1.cor = cor.test(linr2,pc1)$p.value,
+#             lin.std.cor = cor.test(linr2,standardized)$p.value,
+#             ord.pc1.cor = cor.test(ordinality,pc1)$p.value,
+#             ord.std.cor = cor.test(ordinality,standardized)$p.value)
 ```
 
 
