@@ -23,65 +23,36 @@ opts_chunk$set(
 )
 ```
 
-Load more libraries
+Load  libraries
 ```{r, include = FALSE}
 library(dplyr)
 library(tidyr)
+library(broom)
 library(ggplot2)
 library(lme4)
+library(magrittr)
 # require(mosaic)
 rm(list=ls())
 theme_set(theme_bw())
 options(warn=-1)
 ```
 
-Read in the data first
+Read in the data first, then combine Woodcock and Wiat and z-score the Standardized Test composite
 ```{r}
 d <- read.csv("zenith all data.csv")
 d$condition <- factor(d$condition, levels=c("control","abacus"))
-head(d)
-```
-
-Combine Woodcock and Wiat and z-score the Standardized Test composite
-```{r}
 d$standardized <- rowMeans(d[,c("wiat","woodcock")],na.rm=TRUE) 
-
-summary(d$standardized[d$year==0])
-summary(d$standardized[d$year==1])
-summary(d$standardized[d$year==2])
-summary(d$standardized[d$year==3])
-summary(d$standardized[d$condition =="abacus"])
-summary(d$standardized[d$condition =="control"])
 ```
 
 # Descriptives and preliminaries
 
+Summaries.
 ```{r}
-summary(d$ans[d$condition =="abacus"])
-summary(d$ans[d$condition =="control"])
-summary(d$ans[d$year==0])
-summary(d$ans[d$year==1])
-summary(d$ans[d$year==2])
-summary(d$ans[d$year==3])
-
-summary(d$deviance[d$condition =="abacus"])
-summary(d$deviance[d$condition =="control"])
-summary(d$deviance[d$year==1])
-summary(d$deviance[d$year==2])
-summary(d$deviance[d$year==3])
-
-summary(d$linr2[d$condition =="abacus"])
-summary(d$linr2[d$condition =="control"])
-summary(d$linr2[d$year==1])
-summary(d$linr2[d$year==2])
-summary(d$linr2[d$year==3])
-
-summary(d$ordinality[d$condition =="abacus"])
-summary(d$ordinality[d$condition =="control"])
-summary(d$ordinality[d$year==1])
-summary(d$ordinality[d$year==2])
-summary(d$ordinality[d$year==3])
-
+d %>% 
+  select(standardized, ans, deviance, linr2, ordinality, year) %>%
+  group_by(year) %>% 
+  do(tidy(summary(.))) %>% 
+  data.frame
 ```
 
 ## Reliability for Estimation tasks
@@ -130,9 +101,7 @@ OK, now we test for effect of training for ANS. We can use a model b/c we have a
 w.interaction <- lmer(ans ~ year  * condition + (subnum|year), data=d)
 summary(w.interaction)
 wo.interaction<-lmer(ans ~ year + condition + (subnum|year), data=d)
-a<-anova(w.interaction, wo.interaction)
-a
-
+anova(w.interaction, wo.interaction)
 ```
 
 Now, we do t-tests by task to find differences between control and abacus groups. We will correct for multiple comparisons post-hoc, correcting for the # of comparisons per DV. 
@@ -140,18 +109,12 @@ Now, we do t-tests by task to find differences between control and abacus groups
 ```{r}
 tasks <- c("deviance","linr2","ans", "ordinality")
 
-for (t in tasks) {
-  md <- d %>% 
-    rename_("value" = t)
-  
-  print(paste("*********",t,"**********"))
-  print(t.test(subset(md,condition=="abacus" & year==1)$value,
-               subset(md,condition=="control" & year==1)$value,var.equal=TRUE))
-  print(t.test(subset(md,condition=="abacus" & year==2)$value,
-               subset(md,condition=="control" & year==2)$value,var.equal=TRUE))
-  print(t.test(subset(md,condition=="abacus" & year==3)$value,
-               subset(md,condition=="control" & year==3)$value,var.equal=TRUE))
-}
+d %>% 
+  filter(year > 0) %>%
+  gather(measure, value, deviance, linr2, ans, ordinality) %>%
+  group_by(year, measure) %>% 
+  do(tidy(t.test(.$value[.$condition == "abacus"], 
+                 .$value[.$condition == "control"])))
 ```
 
 # PLOTS
@@ -225,6 +188,78 @@ qplot(ordinality, standardized, facets=~year,
 ```
 
 # Models
+
+## Alternative approach to models
+
+This uses the `broom` package - really very nifty.
+```{r}
+sscale <- function(x) {scale(x)[,1]}
+
+md <- d %>% 
+  gather(measure, value, deviance, linr2, ans, ordinality) %>%  
+  group_by(year, measure) %>%
+  mutate(standardized.scale = sscale(standardized),
+         value.scale = sscale(value),
+         wiat.scale = sscale(wiat), 
+         woodcock.scale = sscale(woodcock),
+         math.scale = sscale(math), 
+         placeval.scale = sscale(placeval),
+         arith.scale = sscale(arith), 
+         mental.rot.scale = sscale(mental.rot),
+         verbalwm.scale = sscale(verbalwm),
+         spatialwm.scale = sscale(spatialwm),
+         ravens.scale = sscale(ravens)) 
+  
+models <- md %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(standardized ~ value.scale + 
+               mental.rot.scale + 
+               verbalwm.scale + 
+               spatialwm.scale + 
+               ravens.scale + 
+               age + condition, data = .)))
+```
+
+And make pretty plot. 
+
+```{r}
+qplot(term, estimate, 
+      fill = term, 
+      ymin = estimate - std.error, ymax = estimate + std.error,
+      geom = c("bar", "linerange"), stat = "identity", 
+      facets = measure ~ year, 
+      data=filter(models, term != "(Intercept)")) + 
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_colour_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+```
+
+PCA is fighting me here...
+```{r}
+# pcwrapper <- function(v1, v2, v3, v4, v5) {
+#   print(length(v1))
+#   v <- data.frame(v1 = v1, 
+#                   v2 = v2, 
+#                   v3 = v3, 
+#                   v4 = v4, 
+#                   v5 = v5)
+#   print(as.matrix(v))
+#   s <- princomp(as.matrix(v), cor = TRUE, scores = TRUE)$scores[,"Comp.1"]
+#   print(length(s))
+#   return(s)
+#   }
+
+# %>%
+#   filter(complete.cases(wiat.scale, woodcock.scale, 
+#                                   math.scale, placeval.scale, arith.scale)) %>%
+#   mutate(pc1 = pcwrapper(wiat.scale, woodcock.scale, 
+#                               math.scale, placeval.scale, arith.scale))
+```
+
+## Old, very clunky approach to models.
 
 Set up models - doesn't currently show. 
 ```{r, echo=FALSE}
