@@ -1,11 +1,11 @@
 ---
 title: "Zenith Abacus Estimation"
 author: "JS; template for RMD from mosaic; lots of code from MCF"
-date: "June 1, 2015"
+date: "June 3, 2015"
 output: 
   html_document:
-    fig_height: 6
-    fig_width: 6
+    fig_height: 8
+    fig_width: 8
   pdf_document:
     fig_height: 7
     fig_width: 7
@@ -474,7 +474,7 @@ ord.coefs <- coefs
 as.data.frame(coefs)
 ```
 
-Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison.
+Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison. Section not rendered since I don't think we'll use it; Jess is going to try to address github scaling issue.
 ```{r}
 mathvars=c("wiat","woodcock","placeval","math","arith","standardized")
 predvars=c("ans","mental.rot","verbalwm","spatialwm","ravens","deviance",
@@ -498,6 +498,32 @@ summary(model2)
 anova(model1, model2)
 ```
 
+Year 0 Analyses by JS, to check betas
+```{r}
+#ensure year 0, ensure complete cases
+y0 <- subset(d, year==0)
+yc0 <- y0[complete.cases(y0[, c("ans","mental.rot","verbalwm","spatialwm","ravens")]),]
+
+
+#scale all variables
+yc0$standardized.scale <-scale(yc0$standardized)
+yc0$ans.scale <-scale(yc0$ans)
+yc0$mental.rot.scale<-scale(yc0$mental.rot)
+yc0$age.scale<-scale(yc0$age)
+yc0$verbalwm.scale<-scale(yc0$verbalwm)
+yc0$spatialwm.scale<-scale(yc0$spatialwm)
+yc0$ravens.scale<-scale(yc0$ravens)
+
+#ANS, Year 0
+withansyear0 <- lm(standardized.scale ~ ans.scale + mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc0)
+withoutansyear0 <- lm(standardized.scale ~ mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc0)
+summary(withansyear0)
+summary(withoutansyear0)
+anova(withansyear0, withoutansyear0)
+```
+    
 
 ## Principal Components
 Here we take a principal components analysis of all the math measures and then take PC1, which is the factor with the largest explained variance amongst all the math measures. This is just one way of making a composite of all the math DVs and exploring its relatedness to ANS. Note: the PCs come out negative, so MCF flipped them for interpretability.
@@ -537,6 +563,7 @@ qplot(preds,-betas,facets=model~year,
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
 pca.ans.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 Ordinality
@@ -572,6 +599,7 @@ qplot(preds,betas,facets=model~year,
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
 pca.ord.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 PAE
@@ -606,6 +634,7 @@ qplot(preds,betas,facets=model~year,
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
 pca.pae.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 
@@ -642,6 +671,7 @@ qplot(preds,betas,facets=model~year,
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
 pca.linr2.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 
@@ -681,7 +711,8 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-
+pca.all.coefs <- coefs
+as.data.frame(coefs)
 ```
 
 
@@ -721,11 +752,14 @@ qplot(preds,betas,facets=model~year,
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+
+stand.all.coefs <- coefs
+as.data.frame(coefs)
 ```
 
-## Megafigure
 
-```{r}
+
+```{r, echo=FALSE}
 ans.coefs$measure <- "ANS"
 ans.coefs$outcome <- "Standarized"
 linr2.coefs$measure <- "Linear r^2"
@@ -754,7 +788,7 @@ all.coefs <- bind_rows(ans.coefs,
   filter(model == "All Preds + Intervention")
 
 
-qplot(preds,betas, facets=measure*outcome~year, 
+p<-qplot(preds,betas, facets=outcome*measure~year, 
       fill=preds,
       geom="bar",
       stat="identity",
@@ -766,43 +800,98 @@ qplot(preds,betas, facets=measure*outcome~year,
   xlab("Predictor") + 
   ylab("Standardized Beta Weight") + 
   scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+  theme(axis.text.x = element_text(angle = 90, vjust=1, hjust = 1)) 
+
+
+p
+
+m<- p + scale_y_continuous(limit = c(-1,1))
+
+m
 ```
 
-
-# Model comparisons
-OK, so now that we have that pretty stuff, it's time to do model comparisons that Jess knows how to get the betas out of. 
-
-
-# Univariate analyses
-
-Here are all the correlations:
+## MegaFigure Standardized Score
 
 ```{r}
-# d %>% 
-#   group_by(year) %>%
-#   summarise(ans.std.cor = cor.test(ans,standardized)$estimate,
-#             ans.pc1.cor = cor.test(ans,pc1)$estimate,
-#             dev.pc1.cor = cor.test(deviance,pc1)$estimate,
-#             dev.std.cor = cor.test(deviance,standardized)$estimate,
-#             lin.pc1.cor = cor.test(linr2,pc1)$estimate,
-#             lin.std.cor = cor.test(linr2,standardized)$estimate,
-#             ord.pc1.cor = cor.test(ordinality,pc1)$estimate,
-#             ord.std.cor = cor.test(ordinality,standardized)$estimate)
+ans.coefs$measure <- "ANS"
+ans.coefs$outcome <- "Standarized"
+linr2.coefs$measure <- "Linear r^2"
+linr2.coefs$outcome <- "Standardized"
+ord.coefs$measure <- "Ordinality"
+ord.coefs$outcome <- "Standardized"
+pae.coefs$measure <- "PAE"
+pae.coefs$outcome <- "Standardized"
+
+
+all.coefs <- bind_rows(ans.coefs, 
+                       linr2.coefs, 
+                       ord.coefs,
+                       pae.coefs
+                      ) %>%
+  filter(model == "All Preds + Intervention")
+
+
+p<-qplot(preds,betas, facets=outcome*measure~year, 
+      fill=preds,
+      geom="bar",
+      stat="identity",
+      position="dodge",
+      data=subset(all.coefs, preds!="Intercept")) +
+  geom_linerange(aes(ymin=betas-se,
+                     ymax=betas+se)) +
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_colour_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=.3, hjust = 1)) 
+
+
+p
+
+#m<- p + scale_y_continuous(limit = c(-.4,.5))
+
+#m
 ```
 
-And their p-values:
+
+## Megafigure, PCA only
+
 ```{r}
-# d $>% 
-# group_by(year) %>%
-#   summarise(ans.std.cor = cor.test(ans,standardized)$p.value,
-#             ans.pc1.cor = cor.test(ans,pc1)$p.value,
-#             dev.pc1.cor = cor.test(deviance,pc1)$p.value,
-#             dev.std.cor = cor.test(deviance,standardized)$p.value,
-#             lin.pc1.cor = cor.test(linr2,pc1)$p.value,
-#             lin.std.cor = cor.test(linr2,standardized)$p.value,
-#             ord.pc1.cor = cor.test(ordinality,pc1)$p.value,
-#             ord.std.cor = cor.test(ordinality,standardized)$p.value)
+pca.ans.coefs$measure <- "ANS"
+pca.ans.coefs$outcome <- "PCA"
+pca.linr2.coefs$measure <- "Linear r^2"
+pca.linr2.coefs$outcome <- "PCA"
+pca.ord.coefs$measure <- "Ordinality"
+pca.ord.coefs$outcome <- "PCA"
+pca.pae.coefs$measure <- "PAE"
+pca.pae.coefs$outcome <- "PCA"
+
+all.coefs <- bind_rows(
+                       pca.ans.coefs,
+                       pca.linr2.coefs, 
+                       pca.ord.coefs,
+                       pca.pae.coefs) %>%
+  filter(model == "All Preds + Intervention")
+
+
+l<-qplot(preds,betas, facets=outcome*measure~year, 
+      fill=preds,
+      geom="bar",
+      stat="identity",
+      position="dodge",
+      data=subset(all.coefs, preds!="Intercept")) +
+  geom_linerange(aes(ymin=betas-se,
+                     ymax=betas+se)) +
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_colour_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=0.3, hjust = 1)) 
+
+
+l
+
+#z<- l + scale_y_continuous(limit = c(-1,.5))
+
+#z
 ```
-
-
