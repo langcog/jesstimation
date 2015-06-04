@@ -152,7 +152,6 @@ qplot(deviance, standardized, facets=~year,
   geom_smooth(method="lm") +
   ylab("Standardized Test Composite") +
   xlab("PAE")    
-
 ```
 
 and for linear $r^2$:
@@ -191,9 +190,10 @@ qplot(ordinality, standardized, facets=~year,
 
 ## Alternative approach to models
 
-This uses the `broom` package - really very nifty.
+Standardize predictors.
 ```{r}
-sscale <- function(x) {scale(x)[,1]}
+# this is insane, but PCA will choke if the scaled variables have included in them the scaling attributes (and this is what R does by default). 
+sscale <- function (x) {as.numeric(scale(x))}
 
 md <- d %>% 
   gather(measure, value, deviance, linr2, ans, ordinality) %>%  
@@ -209,8 +209,22 @@ md <- d %>%
          verbalwm.scale = sscale(verbalwm),
          spatialwm.scale = sscale(spatialwm),
          ravens.scale = sscale(ravens)) 
-  
-models <- md %>%
+```
+
+Now fit models. This uses the `broom` package - really very nifty.
+```{r}
+std.baseline.models <- md %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(standardized ~ value.scale, data = .))) %>%
+  filter(term != "(Intercept)") %>%
+  data.frame
+std.baseline.models
+```
+
+And here are the full models.
+```{r}
+std.models <- md %>%
   group_by(year, measure) %>%
   filter(!(year == 0 & measure != "ans")) %>%
   do(tidy(lm(standardized ~ value.scale + 
@@ -222,280 +236,118 @@ models <- md %>%
 ```
 
 And make pretty plot. 
-
 ```{r}
+std.models$term <- factor(std.models$term, 
+                           levels = c("(Intercept)",
+                                      "value.scale", "mental.rot.scale",
+                                      "spatialwm.scale", "verbalwm.scale",
+                                      "ravens.scale","age", "conditionabacus"), 
+                           labels = c("Intercept", 
+                                      "Predictor", "Mental Rotation",
+                                      "Spatial WM", "Verbal WM",
+                                      "Raven's", "Age", "Intervention"))
+
+std.models$measure <- factor(std.models$measure,
+                              levels = c("ans","deviance","linr2","ordinality"),
+                              labels = c("ANS","Deviance","Linear r^2", 
+                                         "Ordinality"))
+  
 qplot(term, estimate, 
       fill = term, 
       ymin = estimate - std.error, ymax = estimate + std.error,
       geom = c("bar", "linerange"), stat = "identity", 
       facets = measure ~ year, 
-      data=filter(models, term != "(Intercept)")) + 
+      data=filter(std.models, term != "Intercept")) + 
   geom_hline(yintercept=0, lty=2) + 
   xlab("Predictor") + 
   ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
+  scale_fill_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
 ```
 
-PCA is fighting me here...
+Add PCA to the dataset. Note that PC1 is flipped just to make life easier.
 ```{r}
-# pcwrapper <- function(v1, v2, v3, v4, v5) {
-#   print(length(v1))
-#   v <- data.frame(v1 = v1, 
-#                   v2 = v2, 
-#                   v3 = v3, 
-#                   v4 = v4, 
-#                   v5 = v5)
-#   print(as.matrix(v))
-#   s <- princomp(as.matrix(v), cor = TRUE, scores = TRUE)$scores[,"Comp.1"]
-#   print(length(s))
-#   return(s)
-#   }
-
-# %>%
-#   filter(complete.cases(wiat.scale, woodcock.scale, 
-#                                   math.scale, placeval.scale, arith.scale)) %>%
-#   mutate(pc1 = pcwrapper(wiat.scale, woodcock.scale, 
-#                               math.scale, placeval.scale, arith.scale))
-```
-
-## Old, very clunky approach to models.
-
-Set up models - doesn't currently show. 
-```{r, echo=FALSE}
-model.pred <- function (data, 
-                        mathvars=c("wiat","woodcock","placeval",
-                                   "math","arith","standardized"),
-                        predvars=c("ans","mental.rot","verbalwm",
-                                   "spatialwm","ravens","deviance",
-                                   "linr2","ordinality"),
-                        model.formula, 
-                        model.name="model",
-                        years = c(0,1,2,3)) {  
-  
-  coefs <- data.frame()
-  for (yr in years) {
-    ## Ensure complete cases for each year
-    y <- subset(data, year==yr)
-    yc <- y[complete.cases(y[, mathvars]),]
-    controls <- subset(yc, condition == "control")
-    
-    ## standardize predictors
-    for (v in c(predvars,mathvars)) {
-      eval(parse(text=paste("yc$",v,".scale <- scale(yc$",v,")",sep="")))
-    }
-    
-    ## Find principal components
-    pca <- princomp(~wiat.scale + woodcock.scale + math.scale + 
-                      placeval.scale + arith.scale, 
-                    data=yc, 
-                    cor = TRUE, scores = TRUE)  
-    yc$pc1 <- pca$scores[,"Comp.1"]
-    
-    ## run model
-    model <- lm(model.formula, data=yc)  
-    coefs <- bind_rows(coefs, 
-                       data.frame(year=yr,
-                                  betas=coef(model),
-                                  se=coef(summary(model))[, "Std. Error"],
-                                  preds=names(coef(model)),
-                                  model=model.name))
-    }
-  
-  return(coefs)
+# need this to get around standard evals
+pc1 <- function(x,y,z,m,n) {
+  as.numeric(prcomp(~x + y + z + m + n)$x[,1])
 }
+
+# need to filter to complete cases
+pmd <- md %>%
+  filter(complete.cases(wiat.scale, woodcock.scale, math.scale, 
+                        placeval.scale, arith.scale)) %>%
+  mutate(pc1 = -pc1(wiat.scale, woodcock.scale, math.scale, 
+                   placeval.scale, arith.scale))
 ```
 
-And a function to relevel coefficients. (Also not rendered). 
-```{r, echo=FALSE}
-relevel.coefs <- function (coefs, dv="ans.scale") {
-  
-  coefs$preds <- factor(coefs$preds, 
-                        levels=c("(Intercept)",dv,"mental.rot.scale",
-                                 "spatialwm.scale","verbalwm.scale","ravens.scale",
-                                 "age","conditionabacus"))
-  coefs$preds <- plyr::revalue(coefs$preds, c("(Intercept)"="Intercept",
-                                        "ans.scale" ="ANS",
-                                        "linr2.scale"="Estimation Linear r^2",
-                                        "ordinality.scale"="Ordinality",
-                                        "deviance.scale"="PAE",
-                                        "mental.rot.scale"="Mental Rotation",
-                                        "ravens.scale"="Raven's",
-                                        "spatialwm.scale"="Spatial WM",
-                                        "verbalwm.scale"="Verbal WM",
-                                        "conditionabacus"="Intervention",
-                                        "age"="Age"))
-  coefs$model <- factor(coefs$model, levels=c("vanilla","complex","complex + cond"))
-  coefs$model <- plyr::revalue(coefs$model, c("vanilla"="Univariate",
-                                        "complex"="All Preds",
-                                        "complex + cond"=
-                                          "All Preds + Intervention"))
-  return(coefs)
-}
-```
-
-## Test Models on standardized tests
-
-ANS and standardized test composite
+PCA Models and plot.
 ```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ans.scale), 
-                              model.name="vanilla")),               
-               try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ans.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond")))
-coefs <- relevel.coefs(coefs)
+pca.baseline.models <- pmd %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(pc1 ~ value.scale, data = .))) %>%
+  filter(term != "(Intercept)") %>%
+  data.frame
+pca.baseline.models
 
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
+pca.models <- pmd %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(pc1 ~ value.scale + 
+               mental.rot.scale + 
+               verbalwm.scale + 
+               spatialwm.scale + 
+               ravens.scale + 
+               age + condition, data = .)))
+
+pca.models$term <- factor(pca.models$term, 
+                          levels = c("(Intercept)",
+                                     "value.scale", "mental.rot.scale",
+                                     "spatialwm.scale", "verbalwm.scale",
+                                     "ravens.scale","age", "conditionabacus"), 
+                          labels = c("Intercept", 
+                                     "Predictor", "Mental Rotation",
+                                     "Spatial WM", "Verbal WM",
+                                     "Raven's", "Age", "Intervention"))
+
+pca.models$measure <- factor(pca.models$measure,
+                              levels = c("ans","deviance","linr2","ordinality"),
+                              labels = c("ANS","Deviance","Linear r^2", 
+                                         "Ordinality"))
+  
+qplot(term, estimate, 
+      fill = term, 
+      ymin = estimate - std.error, ymax = estimate + std.error,
+      geom = c("bar", "linerange"), stat = "identity", 
+      facets = measure ~ year, 
+      data=filter(pca.models, term != "Intercept")) + 
   geom_hline(yintercept=0, lty=2) + 
   xlab("Predictor") + 
   ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
+  scale_fill_discrete(name="Predictor") +
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-ans.coefs <- coefs
-as.data.frame(coefs)
 ```
 
-Percent Absolute Error
+## Convincing ourselves that the stats are OK
+
+Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison. 
 ```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        deviance.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        deviance.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="deviance.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-pae.coefs <- coefs
-as.data.frame(coefs)
-```
-
-Linear $r^2$
-```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        linr2.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               
-               try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        linr2.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="linr2.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
-as.data.frame(coefs)
-linr2.coefs <- coefs
-```
-
-Ordinality
-```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ordinality.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               
-               try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ordinality.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="ordinality.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
-ord.coefs <- coefs
-as.data.frame(coefs)
-```
-
-Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison. Section not rendered since I don't think we'll use it; Jess is going to try to address github scaling issue.
-```{r}
-mathvars=c("wiat","woodcock","placeval","math","arith","standardized")
-predvars=c("ans","mental.rot","verbalwm","spatialwm","ravens","deviance",
-           "linr2","ordinality")
-
-y <- subset(d, year==0)
-yc <- y[complete.cases(y[, c("ans","mental.rot","verbalwm","spatialwm","ravens")]),]
-    
-## standardize predictors in
-for (v in c(predvars,mathvars)) {
-  eval(parse(text=paste("yc$",v,".scale <- scale(yc$",v,")",sep="")))
-}
-        
 ## run models
-model1 <- lm(standardized.scale ~ ans.scale + mental.rot.scale + verbalwm.scale + 
-              spatialwm.scale + ravens.scale +  age + condition, data = yc)
+# note, the filtering expression gets the model out of the same data frame that we used for the figure
+model1 <- lm(standardized.scale ~ value.scale + mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, 
+             data = filter(md, year == 0, measure == "ans", 
+                           complete.cases(value.scale)))
 model2 <- lm(standardized.scale ~ mental.rot.scale + verbalwm.scale + 
-              spatialwm.scale + ravens.scale +  age + condition, data = yc)
+              spatialwm.scale + ravens.scale +  age + condition, 
+             data = filter(md, year == 0, measure == "ans", 
+                           complete.cases(value.scale)))
 summary(model1)
 summary(model2)
 anova(model1, model2)
+
+# also note that p value for the anova is the same as the coefficient p value in the models data frame
+filter(std.models, year == 0, measure == "ANS")
 ```
 
 Year 0 Analyses by JS, to check betas
@@ -524,374 +376,3 @@ summary(withoutansyear0)
 anova(withansyear0, withoutansyear0)
 ```
     
-
-## Principal Components
-Here we take a principal components analysis of all the math measures and then take PC1, which is the factor with the largest explained variance amongst all the math measures. This is just one way of making a composite of all the math DVs and exploring its relatedness to ANS. Note: the PCs come out negative, so MCF flipped them for interpretability.
-
-ANS
-```{r}
-coefs <- rbind(model.pred(data=d, 
-                          model.formula = formula(pc1 ~ ans.scale), 
-                          model.name="vanilla"),
-               model.pred(data=d, 
-                          model.formula = formula(pc1 ~ ans.scale + 
-                                                    mental.rot.scale + 
-                                                    verbalwm.scale + 
-                                                    spatialwm.scale + ravens.scale + 
-                                                    age), 
-                          model.name="complex"),
-               model.pred(data=d, 
-                          model.formula = formula(pc1 ~ ans.scale + 
-                                                    mental.rot.scale + 
-                                                    verbalwm.scale + 
-                                                    spatialwm.scale + ravens.scale + 
-                                                    age + condition), 
-                          model.name="complex + cond"))
-coefs <- relevel.coefs(coefs)
-
-qplot(preds,-betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=-betas-se,
-                     ymax=-betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-pca.ans.coefs <- coefs
-as.data.frame(coefs)
-```
-
-Ordinality
-```{r}
-
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        ordinality.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               
-               try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        ordinality.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="ordinality.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
-pca.ord.coefs <- coefs
-as.data.frame(coefs)
-```
-
-PAE
-```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        deviance.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               
-               try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        deviance.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="deviance.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-pca.pae.coefs <- coefs
-as.data.frame(coefs)
-```
-
-
-Linear $r^2$
-```{r}
-
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        linr2.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               
-               try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        linr2.scale + 
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv="linr2.scale")
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1))
-pca.linr2.coefs <- coefs
-as.data.frame(coefs)
-```
-
-
-## Combine all estimation measures
-Predicting PC1
-
-```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        ans.scale + deviance.scale + linr2.scale + ordinality.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               try(model.pred(data=d, 
-                              model.formula = formula(pc1 ~ 
-                                                        ans.scale + 
-                                                        deviance.scale + 
-                                                        linr2.scale + 
-                                                        ordinality.scale +
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv=c("ans.scale", "deviance.scale",
-                                   "linr2.scale","ordinality.scale"))
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-pca.all.coefs <- coefs
-as.data.frame(coefs)
-```
-
-
-Now, combine all estimation measures
-Predicting standardized test
-
-```{r}
-coefs <- rbind(try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ans.scale + deviance.scale + linr2.scale + ordinality.scale), 
-                              model.name="vanilla", years=c(1,2,3))),
-               try(model.pred(data=d, 
-                              model.formula = formula(standardized.scale ~ 
-                                                        ans.scale + 
-                                                        deviance.scale + 
-                                                        linr2.scale + 
-                                                        ordinality.scale +
-                                                        mental.rot.scale + 
-                                                        verbalwm.scale + 
-                                                        spatialwm.scale + 
-                                                        ravens.scale + 
-                                                        age + condition), 
-                              model.name="complex + cond", years=c(1,2,3))))
-coefs <- relevel.coefs(coefs,dv=c("ans.scale", "deviance.scale",
-                                   "linr2.scale","ordinality.scale"))
-
-qplot(preds,betas,facets=model~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
-
-stand.all.coefs <- coefs
-as.data.frame(coefs)
-```
-
-
-
-```{r, echo=FALSE}
-ans.coefs$measure <- "ANS"
-ans.coefs$outcome <- "Standarized"
-linr2.coefs$measure <- "Linear r^2"
-linr2.coefs$outcome <- "Standardized"
-ord.coefs$measure <- "Ordinality"
-ord.coefs$outcome <- "Standardized"
-pae.coefs$measure <- "PAE"
-pae.coefs$outcome <- "Standardized"
-pca.ans.coefs$measure <- "ANS"
-pca.ans.coefs$outcome <- "PCA"
-pca.linr2.coefs$measure <- "Linear r^2"
-pca.linr2.coefs$outcome <- "PCA"
-pca.ord.coefs$measure <- "Ordinality"
-pca.ord.coefs$outcome <- "PCA"
-pca.pae.coefs$measure <- "PAE"
-pca.pae.coefs$outcome <- "PCA"
-
-all.coefs <- bind_rows(ans.coefs, 
-                       linr2.coefs, 
-                       ord.coefs,
-                       pae.coefs,
-                       pca.ans.coefs,
-                       pca.linr2.coefs, 
-                       pca.ord.coefs,
-                       pca.pae.coefs) %>%
-  filter(model == "All Preds + Intervention")
-
-
-p<-qplot(preds,betas, facets=outcome*measure~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(all.coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=1, hjust = 1)) 
-
-
-p
-
-m<- p + scale_y_continuous(limit = c(-1,1))
-
-m
-```
-
-## MegaFigure Standardized Score
-
-```{r}
-ans.coefs$measure <- "ANS"
-ans.coefs$outcome <- "Standarized"
-linr2.coefs$measure <- "Linear r^2"
-linr2.coefs$outcome <- "Standardized"
-ord.coefs$measure <- "Ordinality"
-ord.coefs$outcome <- "Standardized"
-pae.coefs$measure <- "PAE"
-pae.coefs$outcome <- "Standardized"
-
-
-all.coefs <- bind_rows(ans.coefs, 
-                       linr2.coefs, 
-                       ord.coefs,
-                       pae.coefs
-                      ) %>%
-  filter(model == "All Preds + Intervention")
-
-
-p<-qplot(preds,betas, facets=outcome*measure~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(all.coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=.3, hjust = 1)) 
-
-
-p
-
-#m<- p + scale_y_continuous(limit = c(-.4,.5))
-
-#m
-```
-
-
-## Megafigure, PCA only
-
-```{r}
-pca.ans.coefs$measure <- "ANS"
-pca.ans.coefs$outcome <- "PCA"
-pca.linr2.coefs$measure <- "Linear r^2"
-pca.linr2.coefs$outcome <- "PCA"
-pca.ord.coefs$measure <- "Ordinality"
-pca.ord.coefs$outcome <- "PCA"
-pca.pae.coefs$measure <- "PAE"
-pca.pae.coefs$outcome <- "PCA"
-
-all.coefs <- bind_rows(
-                       pca.ans.coefs,
-                       pca.linr2.coefs, 
-                       pca.ord.coefs,
-                       pca.pae.coefs) %>%
-  filter(model == "All Preds + Intervention")
-
-
-l<-qplot(preds,betas, facets=outcome*measure~year, 
-      fill=preds,
-      geom="bar",
-      stat="identity",
-      position="dodge",
-      data=subset(all.coefs, preds!="Intercept")) +
-  geom_linerange(aes(ymin=betas-se,
-                     ymax=betas+se)) +
-  geom_hline(yintercept=0, lty=2) + 
-  xlab("Predictor") + 
-  ylab("Standardized Beta Weight") + 
-  scale_colour_discrete(name="Predictor") +
-  theme(axis.text.x = element_text(angle = 90, vjust=0.3, hjust = 1)) 
-
-
-l
-
-#z<- l + scale_y_continuous(limit = c(-1,.5))
-
-#z
-```
