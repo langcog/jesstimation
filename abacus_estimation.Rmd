@@ -216,7 +216,7 @@ Now fit models. This uses the `broom` package - really very nifty.
 std.baseline.models <- md %>%
   group_by(year, measure) %>%
   filter(!(year == 0 & measure != "ans")) %>%
-  do(tidy(lm(standardized ~ value.scale, data = .))) %>%
+  do(tidy(lm(standardized.scale ~ value.scale, data = .))) %>%
   filter(term != "(Intercept)") %>%
   data.frame
 std.baseline.models
@@ -227,7 +227,7 @@ And here are the full models.
 std.models <- md %>%
   group_by(year, measure) %>%
   filter(!(year == 0 & measure != "ans")) %>%
-  do(tidy(lm(standardized ~ value.scale + 
+  do(tidy(lm(standardized.scale ~ value.scale + 
                mental.rot.scale + 
                verbalwm.scale + 
                spatialwm.scale + 
@@ -334,6 +334,16 @@ Now for the guts of one of the models, just an example from year 0, ANS. This us
 ```{r}
 ## run models
 # note, the filtering expression gets the model out of the same data frame that we used for the figure
+# std.models <- md %>%
+#   group_by(year, measure) %>%
+#   filter(!(year == 0 & measure != "ans")) %>%
+#   do(tidy(lm(standardized.scale ~ value.scale + 
+#                mental.rot.scale + 
+#                verbalwm.scale + 
+#                spatialwm.scale + 
+#                ravens.scale + 
+#                age + condition, data = .)))
+
 model1 <- lm(standardized.scale ~ value.scale + mental.rot.scale + verbalwm.scale + 
               spatialwm.scale + ravens.scale +  age + condition, 
              data = filter(md, year == 0, measure == "ans", 
