@@ -18,7 +18,7 @@ output:
 # knitr settings to control how R chunks work.
 require(knitr)
 opts_chunk$set(
-  cache=TRUE,
+  cache=FALSE,
   size="small"    # slightly smaller font for code
 )
 ```
@@ -269,7 +269,7 @@ Add PCA to the dataset. Note that PC1 is flipped just to make life easier.
 ```{r}
 # need this to get around standard evals
 pc1 <- function(x,y,z,m,n) {
-  as.numeric(prcomp(~x + y + z + m + n)$x[,1])
+  sscale(as.numeric(prcomp(~x + y + z + m + n)$x[,1]))
 }
 
 # need to filter to complete cases
