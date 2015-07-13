@@ -1,7 +1,7 @@
 ---
 title: "Zenith Abacus Estimation"
-author: "JS; template for RMD from mosaic; lots of code from MCF"
-date: "June 3, 2015"
+author: "Template for RMD from mosaic; most code from MCF, some from JS"
+date: "June 8, 2015"
 output: 
   html_document:
     fig_height: 8
@@ -64,6 +64,13 @@ data.frame(year=factor(c("1-2","2-3")),
                             d$deviance[d$year==2])$estimate,
                    cor.test(d$deviance[d$year==2],
                             d$deviance[d$year==3])$estimate))
+
+
+data.frame(year=factor(c("1-2","2-3")),
+           pvals=c(cor.test(d$deviance[d$year==1],
+                            d$deviance[d$year==2])$p.value,
+                   cor.test(d$deviance[d$year==2],
+                            d$deviance[d$year==3])$p.value))
 ```
 
 Linear $r^2$.
@@ -71,7 +78,12 @@ Linear $r^2$.
 data.frame(year=factor(c("1-2","2-3")),
            corrs=c(cor.test(d$linr2[d$year==1],d$linr2[d$year==2])$estimate,
                    cor.test(d$linr2[d$year==2],d$linr2[d$year==3])$estimate))
+
+data.frame(year=factor(c("1-2","2-3")),
+          pvals=c(cor.test(d$linr2[d$year==1],d$linr2[d$year==2])$p.value,
+                   cor.test(d$linr2[d$year==2],d$linr2[d$year==3])$p.value))
 ```
+
 
 Ordinality.
 ```{r}
@@ -80,6 +92,12 @@ data.frame(year=factor(c("1-2","2-3")),
                             d$ordinality[d$year==2])$estimate,
                    cor.test(d$ordinality[d$year==2],
                             d$ordinality[d$year==3])$estimate))
+
+data.frame(year=factor(c("1-2","2-3")),
+          pvals=c(cor.test(d$ordinality[d$year==1],
+                            d$ordinality[d$year==2])$p.value,
+                   cor.test(d$ordinality[d$year==2],
+                            d$ordinality[d$year==3])$p.value))
 ```
 
 ANS.
@@ -91,6 +109,14 @@ data.frame(year=factor(c("0-1","1-2","2-3")),
                             d$ans[d$year==2])$estimate,
                    cor.test(d$ans[d$year==2],
                             d$ans[d$year==3])$estimate))
+
+data.frame(year=factor(c("0-1","1-2","2-3")),
+           pvals=c(cor.test(d$ans[d$year==0],
+                            d$ans[d$year==1])$p.value, 
+                   cor.test(d$ans[d$year==1],
+                            d$ans[d$year==2])$p.value,
+                   cor.test(d$ans[d$year==2],
+                            d$ans[d$year==3])$p.value))
 ```
 We see that the correlations are pretty decent year-to-year for our three DVs.
 
@@ -188,7 +214,6 @@ qplot(ordinality, standardized, facets=~year,
 
 # Models
 
-## Alternative approach to models
 
 Standardize predictors.
 ```{r}
@@ -212,6 +237,8 @@ md <- d %>%
 ```
 
 Now fit models. This uses the `broom` package - really very nifty.
+
+NOTE, these are scaled values predicting scaled values. 
 ```{r}
 std.baseline.models <- md %>%
   group_by(year, measure) %>%
@@ -220,6 +247,20 @@ std.baseline.models <- md %>%
   filter(term != "(Intercept)") %>%
   data.frame
 std.baseline.models
+```
+
+Check year 3 correlations
+
+```{r}
+cor.test(d$standardized[d$year==3],d$linr2[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$ans[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$deviance[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$ordinality[d$year==3])
+
+
 ```
 
 And here are the full models.
@@ -233,6 +274,17 @@ std.models <- md %>%
                spatialwm.scale + 
                ravens.scale + 
                age + condition, data = .)))
+
+options(dplyr.width = Inf)
+print.data.frame(std.models)
+
+gelb<-as.numeric(std.models$p.value)
+small<-subset(std.models, gelb<.05)
+print.data.frame(small)
+
+
+
+
 ```
 
 And make pretty plot. 
@@ -249,7 +301,7 @@ std.models$term <- factor(std.models$term,
 
 std.models$measure <- factor(std.models$measure,
                               levels = c("ans","deviance","linr2","ordinality"),
-                              labels = c("ANS","Deviance","Linear r^2", 
+                              labels = c("ANS","PAE","Linear r^2", 
                                          "Ordinality"))
   
 qplot(term, estimate, 
@@ -290,6 +342,7 @@ pca.baseline.models <- pmd %>%
   data.frame
 pca.baseline.models
 
+
 pca.models <- pmd %>%
   group_by(year, measure) %>%
   filter(!(year == 0 & measure != "ans")) %>%
@@ -299,6 +352,15 @@ pca.models <- pmd %>%
                spatialwm.scale + 
                ravens.scale + 
                age + condition, data = .)))
+
+options(dplyr.width = Inf)
+
+print.data.frame(pca.models)
+
+
+gelb2<-as.numeric(pca.models$p.value)
+small2<-subset(pca.models, gelb2<.05)
+print.data.frame(small2)
 
 pca.models$term <- factor(pca.models$term, 
                           levels = c("(Intercept)",
@@ -312,7 +374,7 @@ pca.models$term <- factor(pca.models$term,
 
 pca.models$measure <- factor(pca.models$measure,
                               levels = c("ans","deviance","linr2","ordinality"),
-                              labels = c("ANS","Deviance","Linear r^2", 
+                              labels = c("ANS","PAE","Linear r^2", 
                                          "Ordinality"))
   
 qplot(term, estimate, 
@@ -361,7 +423,7 @@ filter(std.models, year == 0, measure == "ANS")
 ```
 
 Year 0 Analyses by JS, to check betas
-```{r}
+```{r, echo=FALSE}
 #ensure year 0, ensure complete cases
 y0 <- subset(d, year==0)
 yc0 <- y0[complete.cases(y0[, c("ans","mental.rot","verbalwm","spatialwm","ravens")]),]
@@ -385,4 +447,214 @@ summary(withansyear0)
 summary(withoutansyear0)
 anova(withansyear0, withoutansyear0)
 ```
+
+
+Longitudial growth models
+----
+
+Let's start by plotting some growth curves for standardized math measures.
+
+```{r}
+qplot(year, standardized, facets=~subnum, 
+      geom="line",
+      data=subset(d, subnum %in% unique(subnum)[1:30])) + 
+  ylim(c(0,1)) + 
+  ylab("Standardized Math Tests (WIAT & WJ)") + 
+  xlab("Year")
+```
+
+Now add some models. Check whether linear or quadratic is more useful. 
+
+```{r}
+preds <- c("standardized","year","subnum")
+d.cc <- d[complete.cases(d[,preds]),preds]
+
+mod1 <- lmer(standardized ~ year + (year | subnum), 
+            data=d.cc)
+mod2 <- lmer(standardized ~ year + I(year^2) + (year + I(year^2) | subnum), 
+            data=d.cc)
+anova(mod1,mod2)
+```
+
+No gain for this DV (standardized tests) in adding a quadratic term. Let's drop it then. 
+
+Here's a basic model showing individaul variability plotted by the same model for all participants. It's a basic linear model and it doesn't do that badly. 
+
+The approach we're going to follow is to try and see gains by adding predictors to this model to better capture individual variation. (Note that if we use individualized growth terms in a mixed model we already fit pretty much all the variance so there's not much else we can do, so we are using regular linear models here). 
+
+```{r}
+preds <- c("standardized","year","subnum")
+d.cc <- d[complete.cases(d[,preds]),preds]
+
+mod <- lm(standardized ~ year, 
+            data=d.cc)
+d.cc$mod <- predict(mod)
+
+qplot(year, standardized, facets=~subnum, 
+      geom="point",
+      data=subset(d.cc, subnum %in% unique(subnum)[1:30])) + 
+  geom_line(aes(x=year, y=mod),lty=2) + 
+  ylim(c(0,1)) + 
+  ylab("Standardized Math Tests (WIAT & WJ)") + 
+  xlab("Year")
+```
+
+Let's try adding concurrent ANS as a predictor. As you can see, it does very little here if we have a single coefficient.
+
+(Note that there are some missing values for ANS from year 0, so that's why curves are truncated). 
+
+```{r}
+preds <- c("standardized","year","subnum","ans")
+d.cc <- d[complete.cases(d[,preds]),preds]
+
+mod <- lm(standardized ~ year,
+            data=d.cc)
+mod2 <- lm(standardized ~ year + ans, 
+            data=d.cc)
+d.cc$mod <- predict(mod)
+d.cc$mod2 <- predict(mod2)
+anova(mod,mod2)
+
+qplot(year, standardized, facets=~subnum, 
+      geom="point",
+      data=subset(d.cc, subnum %in% unique(subnum)[1:30])) + 
+  geom_line(aes(x=year, y=mod),lty=2) + 
+  geom_line(aes(x=year, y=mod2),lty=1,col="red") + 
+  ylim(c(0,1)) + 
+  ylab("Standardized Math Tests (WIAT & WJ)") + 
+  xlab("Year")
+```
+
+Multiple coefficients, one for each year, and you start to see some teensy-tiny shape differences between curves. (I added abacus condition here as well). 
+
+The dashed line is without ANS, the solid is with.
+
+```{r}
+preds <- c("standardized","year","subnum","condition","ans")
+d.cc <- d[complete.cases(d[,preds]),preds]
+
+mod <- lm(standardized ~ factor(year) * condition,
+            data=d.cc)
+mod2 <- lm(standardized ~ factor(year) * condition + 
+             factor(year) * ans - ans, 
+            data=d.cc)
+d.cc$mod <- predict(mod)
+d.cc$mod2 <- predict(mod2)
+anova(mod,mod2)
+
+qplot(year, standardized, facets=~subnum, 
+      geom="point",col=condition,
+      data=subset(d.cc, subnum %in% unique(subnum)[1:30])) + 
+  geom_line(aes(x=year, y=mod),lty=2) + 
+  geom_line(aes(x=year, y=mod2),lty=1) + 
+  ylim(c(0,1)) + 
+  ylab("Standardized Math Tests (WIAT & WJ)") + 
+  xlab("Year")
+```
+
+Just for kicks, let's add everything into the mix and see how we do.
+
+We are doing a bunch better in making customized predictions. In terms of significant effects, we get:
+
+
+* arithmetic (big predictor of - you guessed it - standardized arithmetic) 
+* abacus condition (whew)
+* mental rotation
+* raven's 
+* verbal wm (but not spatial)
+
+Nothing for ANS. Note that these predictions get noticeably worse when you leave out arithmetic scores. Domain knowledge is a big predictor. 
+
+```{r}
+preds <- c("standardized","year","subnum","condition","ans","mental.rot","spatialwm","verbalwm","ravens","age")
+d.cc <- d[complete.cases(d[,preds]),preds]
+
+mod <- lm(standardized ~ factor(year) * condition,
+            data=d.cc)
+mod2 <- lm(standardized ~ factor(year) + condition + 
+             age + mental.rot + 
+             spatialwm + ravens + verbalwm + ans, 
+            data=d.cc)
+d.cc$mod <- predict(mod)
+d.cc$mod2 <- predict(mod2)
+
+summary(mod2)
+
+qplot(year, standardized, facets=~subnum, 
+      geom="point",col=condition,
+      data=subset(d.cc, subnum %in% unique(subnum)[1:30])) + 
+  geom_line(aes(x=year, y=mod),lty=2) + 
+  geom_line(aes(x=year, y=mod2),lty=1) + 
+  ylim(c(0,1)) + 
+  ylab("Standardized Math Tests (WIAT & WJ)") + 
+  xlab("Year")
+```
+
+
+A final analysis: Let's try this by lagging the predictors. We use the year before to predict the current year - so this is trying to use e.g. year 0's ANS to see if it predicts growth over standard predictions in year 1.  
+
+Note that I added gender to the baseline predictor set so we will see only lag differences. 
+
+Define a function to do the lagging.
+
+```{r}
+lag <- function(x, p) {
+  for (y in x$year) {
+    if (y == 0) {
+      eval(parse(text=paste("x$",p,".lag[x$year==0] <- 0",sep="")))
+      } 
     
+    if (y != 0 & ((y-1) %in% x$year)) {
+      eval(parse(text=paste("x$",p,".lag[x$year==y] <- x$",
+                            p,"[x$year==y-1]",sep="")))
+      } else {
+      eval(parse(text=paste("x$",p,".lag[x$year==y] <- NA",sep="")))      
+      }
+    }
+  return(x)
+  }
+```
+
+Now do the actual predictions. We are actually missing too many observations to really do this right without some serious imputation. We lose around a third of our data, as you can see from the plot. 
+
+```{r, echo=FALSE}
+# preds <- c("standardized","year","subnum","condition","ans","mental.rot",
+#            "spatial.wm","verbalwm","ravens","age")
+# pred_small <- c("ans","mental.rot","spatialwm","verbalwm","ravens","arith")
+# d.cc <- d[complete.cases(d[,preds]),preds]
+#   
+# d.cc <- ddply(d.cc, .(subnum), 
+#               function(x) {
+#                 for (p in pred_small) {
+#                   x <- lag(x,p)                  
+#                   }
+#                 return(x)
+#                 })
+# d.cc <- d.cc[complete.cases(d.cc),]
+# 
+# mod <- lm(standardized ~ factor(year) * condition + age,
+#             data=d.cc)
+# mod2 <- lm(standardized ~ factor(year) + condition + age + 
+#               mental.rot.lag + 
+#              spatialwm.lag + ravens.lag + verbalwm.lag + ans.lag, 
+#             data=d.cc)
+# d.cc$mod <- predict(mod)
+# d.cc$mod2 <- predict(mod2)
+# 
+# summary(mod2)
+# 
+# qplot(year, standardized, facets=~subnum, 
+#       geom="point",col=condition,
+#       data=subset(d.cc, subnum %in% unique(subnum)[1:30])) + 
+#   geom_line(aes(x=year, y=mod),lty=2) + 
+#   geom_line(aes(x=year, y=mod2),lty=1) + 
+#   ylim(c(0,1)) + 
+#   ylab("Standardized Math Tests (WIAT & WJ)") + 
+#   xlab("Year")
+```
+
+Because of the missing data problem, do this with just ANS, to see if anything else is different. Results:
+
+* ANS is a predictor
+* lagged ANS isn't
+* None of this is visible in the plot because the differences are too small, so I left out the plot.
