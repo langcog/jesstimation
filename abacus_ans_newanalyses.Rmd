@@ -1,0 +1,340 @@
+---
+title: "Zenith Abacus Estimation"
+author: "Template for RMD from mosaic; most code from MCF, some from JS"
+date: "February 18, 2016"
+output: 
+  html_document:
+    fig_height: 8
+    fig_width: 8
+  pdf_document:
+    fig_height: 7
+    fig_width: 7
+  word_document:
+    fig_height: 7
+    fig_width: 7
+---
+
+```{r include=FALSE}
+# knitr settings to control how R chunks work.
+require(knitr)
+opts_chunk$set(
+  cache=FALSE,
+  size="small"    # slightly smaller font for code
+)
+```
+
+Load  libraries
+```{r, include = FALSE}
+library(dplyr)
+library(tidyr)
+library(broom)
+library(ggplot2)
+library(lme4)
+library(magrittr)
+# require(mosaic)
+rm(list=ls())
+theme_set(theme_bw())
+options(warn=-1)
+```
+
+Read in the data first, then combine Woodcock and Wiat and z-score the Standardized Test composite
+```{r}
+d <- read.csv("/Users/jsulliv1/Desktop/zenith all data_newhighlevela.csv")
+d$condition <- factor(d$condition, levels=c("control","abacus"))
+d$standardized <- rowMeans(d[,c("wiat","woodcock")],na.rm=TRUE) 
+```
+
+# Descriptives and preliminaries
+
+Summaries.
+```{r}
+d %>% 
+  select(standardized, ans, deviance, linr2, ordinality, year) %>%
+  group_by(year) %>% 
+  do(tidy(summary(.))) %>% 
+  data.frame
+```
+
+
+## Training effects: do for all to make sure no errors in datafile after adding new ANS measure
+
+OK, now we test for effect of training for ANS. We can use a model b/c we have all 4 years:
+```{r}
+w.interaction <- lmer(ans ~ year  * condition + (subnum|year), data=d)
+summary(w.interaction)
+wo.interaction<-lmer(ans ~ year + condition + (subnum|year), data=d)
+anova(w.interaction, wo.interaction)
+```
+
+Now, we do t-tests by task to find differences between control and abacus groups. We will correct for multiple comparisons post-hoc, correcting for the # of comparisons per DV. 
+
+```{r}
+tasks <- c("deviance","linr2","ans", "ordinality")
+
+d %>% 
+  filter(year > 0) %>%
+  gather(measure, value, deviance, linr2, ans, ordinality) %>%
+  group_by(year, measure) %>% 
+  do(tidy(t.test(.$value[.$condition == "abacus"], 
+                 .$value[.$condition == "control"])))
+```
+
+
+
+# Models
+
+
+# Standardize predictors.
+```{r}
+# this is insane, but PCA will choke if the scaled variables have included in them the scaling attributes (and this is what R does by default). 
+sscale <- function (x) {as.numeric(scale(x))}
+
+md <- d %>% 
+  gather(measure, value, deviance, linr2, ans, ordinality) %>%  
+  group_by(year, measure) %>%
+  mutate(standardized.scale = sscale(standardized),
+         value.scale = sscale(value),
+         wiat.scale = sscale(wiat), 
+         woodcock.scale = sscale(woodcock),
+         math.scale = sscale(math), 
+         placeval.scale = sscale(placeval),
+         arith.scale = sscale(arith), 
+         mental.rot.scale = sscale(mental.rot),
+         verbalwm.scale = sscale(verbalwm),
+         spatialwm.scale = sscale(spatialwm),
+         ravens.scale = sscale(ravens)) 
+```
+
+Now fit models. This uses the `broom` package - really very nifty.
+
+NOTE, these are scaled values predicting scaled values. 
+```{r}
+std.baseline.models <- md %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(standardized.scale ~ value.scale, data = .))) %>%
+  filter(term != "(Intercept)") %>%
+  data.frame
+std.baseline.models
+```
+
+Check year 3 correlations
+
+```{r}
+cor.test(d$standardized[d$year==3],d$linr2[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$ans[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$deviance[d$year==3])
+
+cor.test(d$standardized[d$year==3],d$ordinality[d$year==3])
+
+
+```
+
+And here are the full models.
+```{r}
+std.models <- md %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(standardized.scale ~ value.scale + 
+               mental.rot.scale + 
+               verbalwm.scale + 
+               spatialwm.scale + 
+               ravens.scale + 
+               age + condition, data = .)))
+
+options(dplyr.width = Inf)
+print.data.frame(std.models)
+
+gelb<-as.numeric(std.models$p.value)
+small<-subset(std.models, gelb<.05)
+print.data.frame(small)
+
+
+
+
+```
+
+And make pretty plot. 
+```{r}
+std.models$term <- factor(std.models$term, 
+                           levels = c("(Intercept)",
+                                      "value.scale", "mental.rot.scale",
+                                      "spatialwm.scale", "verbalwm.scale",
+                                      "ravens.scale","age", "conditionabacus"), 
+                           labels = c("Intercept", 
+                                      "Predictor", "Mental Rotation",
+                                      "Spatial WM", "Verbal WM",
+                                      "Raven's", "Age", "Intervention"))
+
+std.models$measure <- factor(std.models$measure,
+                              levels = c("ans","deviance","linr2","ordinality"),
+                              labels = c("ANS","PAE","Linear r^2", 
+                                         "Ordinality"))
+  
+qplot(term, estimate, 
+      fill = term, 
+      ymin = estimate - std.error, ymax = estimate + std.error,
+      geom = c("bar", "linerange"), stat = "identity", 
+      facets = measure ~ year, 
+      data=filter(std.models, term != "Intercept")) + 
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_fill_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+```
+
+# Add PCA to the dataset. 
+```{r}
+# need this to get around standard evals
+pc1 <- function(x,y,z,m,n) {
+  sscale(as.numeric(prcomp(~x + y + z + m + n)$x[,1]))
+}
+
+# need to filter to complete cases
+pmd <- md %>%
+  filter(complete.cases(wiat.scale, woodcock.scale, math.scale, 
+                        placeval.scale, arith.scale)) %>%
+  mutate(pc1 = pc1(wiat.scale, woodcock.scale, math.scale, 
+                   placeval.scale, arith.scale))
+```
+
+PCA Models and plot.
+```{r}
+pca.baseline.models <- pmd %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(pc1 ~ value.scale, data = .))) %>%
+  filter(term != "(Intercept)") %>%
+  data.frame
+pca.baseline.models
+
+
+pca.models <- pmd %>%
+  group_by(year, measure) %>%
+  filter(!(year == 0 & measure != "ans")) %>%
+  do(tidy(lm(pc1 ~ value.scale + 
+               mental.rot.scale + 
+               verbalwm.scale + 
+               spatialwm.scale + 
+               ravens.scale + 
+               age + condition, data = .)))
+
+options(dplyr.width = Inf)
+
+print.data.frame(pca.models)
+
+
+gelb2<-as.numeric(pca.models$p.value)
+small2<-subset(pca.models, gelb2<.05)
+print.data.frame(small2)
+
+pca.models$term <- factor(pca.models$term, 
+                          levels = c("(Intercept)",
+                                     "value.scale", "mental.rot.scale",
+                                     "spatialwm.scale", "verbalwm.scale",
+                                     "ravens.scale","age", "conditionabacus"), 
+                          labels = c("Intercept", 
+                                     "Predictor", "Mental Rotation",
+                                     "Spatial WM", "Verbal WM",
+                                     "Raven's", "Age", "Intervention"))
+
+pca.models$measure <- factor(pca.models$measure,
+                              levels = c("ans","deviance","linr2","ordinality"),
+                              labels = c("ANS","PAE","Linear r^2", 
+                                         "Ordinality"))
+  
+qplot(term, estimate, 
+      fill = term, 
+      ymin = estimate - std.error, ymax = estimate + std.error,
+      geom = c("bar", "linerange"), stat = "identity", 
+      facets = measure ~ year, 
+      data=filter(pca.models, term != "Intercept")) + 
+  geom_hline(yintercept=0, lty=2) + 
+  xlab("Predictor") + 
+  ylab("Standardized Beta Weight") + 
+  scale_fill_discrete(name="Predictor") +
+  theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+## Breaking down the models (not required, but helpful to ensure no code glitches)
+
+Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison. 
+```{r}
+## run models
+# note, the filtering expression gets the model out of the same data frame that we used for the figure
+# std.models <- md %>%
+#   group_by(year, measure) %>%
+#   filter(!(year == 0 & measure != "ans")) %>%
+#   do(tidy(lm(standardized.scale ~ value.scale + 
+#                mental.rot.scale + 
+#                verbalwm.scale + 
+#                spatialwm.scale + 
+#                ravens.scale + 
+#                age + condition, data = .)))
+
+model1 <- lm(standardized.scale ~ value.scale + mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, 
+             data = filter(md, year == 0, measure == "ans", 
+                           complete.cases(value.scale)))
+model2 <- lm(standardized.scale ~ mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, 
+             data = filter(md, year == 0, measure == "ans", 
+                           complete.cases(value.scale)))
+summary(model1)
+summary(model2)
+anova(model1, model2)
+
+# also note that p value for the anova is the same as the coefficient p value in the models data frame
+filter(std.models, year == 0, measure == "ANS")
+```
+
+Year 0 Analyses by JS, to check betas
+```{r, echo=FALSE}
+#ensure year 0, ensure complete cases
+y0 <- subset(d, year==0)
+yc0 <- y0[complete.cases(y0[, c("ans","mental.rot","verbalwm","spatialwm","ravens")]),]
+
+
+#scale all variables
+yc0$standardized.scale <-scale(yc0$standardized)
+yc0$ans.scale <-scale(yc0$ans)
+yc0$mental.rot.scale<-scale(yc0$mental.rot)
+yc0$age.scale<-scale(yc0$age)
+yc0$verbalwm.scale<-scale(yc0$verbalwm)
+yc0$spatialwm.scale<-scale(yc0$spatialwm)
+yc0$ravens.scale<-scale(yc0$ravens)
+
+#ANS, Year 0
+withansyear0 <- lm(standardized.scale ~ ans.scale + mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc0)
+withoutansyear0 <- lm(standardized.scale ~ mental.rot.scale + verbalwm.scale + 
+              spatialwm.scale + ravens.scale +  age + condition, data = yc0)
+summary(withansyear0)
+summary(withoutansyear0)
+anova(withansyear0, withoutansyear0)
+```
+
+

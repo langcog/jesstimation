@@ -39,7 +39,7 @@ options(warn=-1)
 
 Read in the data first, then combine Woodcock and Wiat and z-score the Standardized Test composite
 ```{r}
-d <- read.csv("zenith all data.csv")
+d <- read.csv("/Users/jsulliv1/Downloads/jesstimation-master/zenith all data.csv")
 d$condition <- factor(d$condition, levels=c("control","abacus"))
 d$standardized <- rowMeans(d[,c("wiat","woodcock")],na.rm=TRUE) 
 ```
@@ -165,7 +165,7 @@ qplot(ans, standardized, facets=~year,
 ```
 
 Now do the same for deviance:
-```{r, warnings=FALSE}
+```{/r, warnings=FALSE}
 qplot(deviance, standardized, facets=~year,
       data=d) + 
   geom_smooth(method="lm") +
@@ -390,7 +390,7 @@ qplot(term, estimate,
   theme(axis.text.x = element_text(angle = 90, vjust=.5, hjust = 1)) 
 ```
 
-## Convincing ourselves that the stats are OK
+## Additional code to double check for no glitches in above code
 
 Now for the guts of one of the models, just an example from year 0, ANS. This uses ANOVA for model comparison. 
 ```{r}
